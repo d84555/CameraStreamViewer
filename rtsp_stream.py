@@ -4,7 +4,6 @@ import subprocess
 import signal
 import time
 import threading
-import shlex
 from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
@@ -17,8 +16,19 @@ class RTSPStream:
         self.current_stream_type = None
         self.hls_output_dir = os.path.join('static', 'hls')
         
-        # Ensure HLS directory exists
+        # Ensure HLS directory exists - do this immediately on initialization
+        # and make sure it's writable
         os.makedirs(self.hls_output_dir, exist_ok=True)
+        
+        # Create a test file to verify directory is writable
+        test_file_path = os.path.join(self.hls_output_dir, 'test.txt')
+        try:
+            with open(test_file_path, 'w') as f:
+                f.write('test')
+            os.remove(test_file_path)
+            logger.info(f"HLS directory {self.hls_output_dir} is writable")
+        except Exception as e:
+            logger.error(f"HLS directory {self.hls_output_dir} is not writable: {str(e)}")
 
     def _build_rtsp_url(self, stream_type):
         """Build the RTSP URL based on the camera settings and stream type"""
@@ -50,27 +60,34 @@ class RTSPStream:
             # Stop any existing stream first
             self.stop_stream()
             
+            # Make sure the directory exists
+            os.makedirs(self.hls_output_dir, exist_ok=True)
+            
             rtsp_url = self._build_rtsp_url(stream_type)
             self.current_stream_type = stream_type
             
             # Clear any existing HLS segments
             for file in os.listdir(self.hls_output_dir):
                 if file.endswith('.ts') or file.endswith('.m3u8'):
-                    os.remove(os.path.join(self.hls_output_dir, file))
+                    try:
+                        os.remove(os.path.join(self.hls_output_dir, file))
+                    except Exception as e:
+                        logger.warning(f"Could not remove file {file}: {str(e)}")
             
             # Build ffmpeg command
             hls_path = os.path.join(self.hls_output_dir, 'stream.m3u8')
             segment_path = os.path.join(self.hls_output_dir, 'segment_%03d.ts')
             
-            # Construct ffmpeg command
+            # Construct ffmpeg command with improved flags
             cmd = [
                 'ffmpeg',
+                '-rtsp_transport', 'tcp',  # Use TCP for RTSP (more reliable)
                 '-i', rtsp_url,
                 '-c:v', 'copy',  # Copy video codec (no re-encoding)
                 '-c:a', 'aac',   # AAC for audio
                 '-hls_time', '2',  # Each segment will be approximately 2 seconds
                 '-hls_list_size', '10',  # Keep 10 segments in the playlist
-                '-hls_flags', 'delete_segments',  # Delete old segments
+                '-hls_flags', 'delete_segments+append_list',  # Delete old segments and append to list
                 '-hls_segment_filename', segment_path,
                 '-f', 'hls',
                 hls_path
@@ -92,7 +109,14 @@ class RTSPStream:
             )
             
             # Wait a moment for ffmpeg to start generating segments
-            time.sleep(3)
+            # Increased from 3 to 5 seconds to ensure files are properly generated
+            time.sleep(5)
+            
+            # Verify the m3u8 file exists
+            if not os.path.exists(hls_path):
+                stdout, stderr = self.stream_process.communicate()
+                logger.error(f"ffmpeg process failed to create m3u8 file: {stderr.decode('utf-8')}")
+                raise Exception("Failed to create HLS stream files. Check ffmpeg output.")
             
             # Check if process is still running
             if self.stream_process.poll() is not None:
@@ -124,7 +148,9 @@ class RTSPStream:
                 
                 # Try to restart the stream
                 try:
-                    self.start_stream(self.current_stream_type)
+                    # Ensure we have a valid stream type
+                    stream_type = self.current_stream_type or 'main'
+                    self.start_stream(stream_type)
                     logger.info("Stream restarted successfully")
                 except Exception as e:
                     logger.error(f"Failed to restart stream: {str(e)}")

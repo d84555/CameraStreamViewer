@@ -9,6 +9,11 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Ensure required directories exist before starting
+# This is critical for the proper functioning of the application
+os.makedirs('static/hls', exist_ok=True)
+os.makedirs('flask_session', exist_ok=True)
+
 # Create Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev_secret_key")

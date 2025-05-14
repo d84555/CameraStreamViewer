@@ -22,28 +22,69 @@ document.addEventListener('DOMContentLoaded', function() {
     function initPlayer() {
         // If player already exists, dispose it
         if (player) {
-            player.dispose();
+            try {
+                player.dispose();
+            } catch (e) {
+                console.warn('Error disposing player:', e);
+            }
         }
         
-        // Create new player
+        // Create new player with improved options
         player = videojs('videoPlayer', {
             controls: true,
-            autoplay: true,
+            autoplay: false, // Changed to false to control playback explicitly
             preload: 'auto',
             fluid: true,
+            liveui: true, // Enable live UI controls
+            responsive: true,
             html5: {
                 hls: {
-                    overrideNative: true
-                }
+                    overrideNative: true,
+                    enableLowInitialPlaylist: true, // Start with lower quality for faster initial loading
+                    limitRenditionByPlayerDimensions: true
+                },
+                nativeVideoTracks: false,
+                nativeAudioTracks: false
             }
         });
         
-        // Add error handling
+        // Add error handling with better error reporting
         player.on('error', function() {
-            console.error('Video player error:', player.error());
-            showAlert('Error playing stream. Please check your camera settings.', 'danger');
+            const error = player.error();
+            console.error('Video player error:', error);
+            let errorMessage = 'Error playing stream.';
+            
+            // Provide more specific error messages based on error code
+            if (error && error.code) {
+                switch (error.code) {
+                    case 1: // MEDIA_ERR_ABORTED
+                        errorMessage = 'The video playback was aborted.';
+                        break;
+                    case 2: // MEDIA_ERR_NETWORK
+                        errorMessage = 'A network error caused the video download to fail.';
+                        break;
+                    case 3: // MEDIA_ERR_DECODE
+                        errorMessage = 'The video playback was aborted due to a corruption problem.';
+                        break;
+                    case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
+                        errorMessage = 'The stream format is not supported. Please check if HLS file is properly generated.';
+                        break;
+                    default:
+                        errorMessage = `Error playing stream (code: ${error.code}).`;
+                }
+            }
+            
+            showAlert(errorMessage + ' Please check your camera settings.', 'danger');
             stopStream();
         });
+        
+        // Log successful player initialization
+        console.log('Video.js player initialized successfully');
+        
+        // Add event listeners for debugging
+        player.on('loadstart', () => console.log('Video loadstart event fired'));
+        player.on('waiting', () => console.log('Video waiting for data'));
+        player.on('playing', () => console.log('Video playing event fired'));
     }
     
     // Start streaming
@@ -67,8 +108,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Stream started successfully
                 isStreaming = true;
                 
-                // Update UI
+                // Update UI to show connecting status
                 updateStreamingUI(true);
+                streamStatus.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Preparing stream...';
                 
                 // Initialize player if needed
                 if (!player) {
@@ -79,18 +121,32 @@ document.addEventListener('DOMContentLoaded', function() {
                 noStreamMessage.classList.add('d-none');
                 videoPlayer.classList.remove('d-none');
                 
-                // Set the source and start playing
-                player.src({
-                    src: data.stream_url,
-                    type: 'application/x-mpegURL'
-                });
+                // IMPORTANT: Add a delay before loading the video
+                // This ensures the HLS segments are properly generated
+                console.log('Waiting for HLS segments to be ready...');
+                setTimeout(() => {
+                    console.log('Loading video player with URL:', data.stream_url);
+                    
+                    // Check if video tag still exists (user didn't navigate away)
+                    if (document.getElementById('videoPlayer')) {
+                        // Set the source and start playing
+                        player.src({
+                            src: data.stream_url + '?t=' + new Date().getTime(), // Add timestamp to prevent caching
+                            type: 'application/x-mpegURL'
+                        });
+                        
+                        player.play().catch(e => {
+                            console.warn('Autoplay prevented:', e);
+                        });
+                        
+                        // Update final streaming status
+                        streamStatus.innerHTML = '<span class="status-indicator status-online"></span>Online';
+                        
+                        // Update stream info display
+                        updateStreamInfo();
+                    }
+                }, 5000); // Wait 5 seconds before loading the video
                 
-                player.play().catch(e => {
-                    console.warn('Autoplay prevented:', e);
-                });
-                
-                // Update stream info display
-                updateStreamInfo();
             } else {
                 // Handle error
                 showAlert(data.message || 'Failed to start stream', 'danger');
@@ -248,8 +304,36 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Show alert as toast
     function showAlert(message, type) {
-        // You could implement a toast notification here
         console.log(`Alert [${type}]: ${message}`);
+        
+        // Create bootstrap alert
+        const alertContainer = document.createElement('div');
+        alertContainer.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+        alertContainer.style.top = '20px';
+        alertContainer.style.right = '20px';
+        alertContainer.style.zIndex = '9999';
+        alertContainer.style.maxWidth = '400px';
+        
+        // Add message and close button
+        alertContainer.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        // Add to document
+        document.body.appendChild(alertContainer);
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (alertContainer.parentNode) {
+                alertContainer.classList.remove('show');
+                setTimeout(() => {
+                    if (alertContainer.parentNode) {
+                        alertContainer.parentNode.removeChild(alertContainer);
+                    }
+                }, 300);
+            }
+        }, 5000);
     }
     
     // Update UI based on streaming state
