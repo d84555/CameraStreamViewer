@@ -1,0 +1,82 @@
+/* Additional custom styling beyond Bootstrap */
+
+.video-container {
+    background-color: #1a1a1a;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    min-height: 400px;
+    width: 100%;
+}
+
+/* Ensure video fills container */
+.video-js {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* Styling for the no stream message */
+#noStreamMessage {
+    color: #8d8d8d;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    background-color: #1a1a1a;
+}
+
+/* Make sure the fullscreen video covers the entire screen */
+.video-js.vjs-fullscreen {
+    position: fixed;
+    overflow: hidden;
+    z-index: 9999;
+}
+
+/* Styling for stream status indicators */
+.status-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.status-online {
+    background-color: var(--bs-success);
+}
+
+.status-offline {
+    background-color: var(--bs-danger);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .video-container {
+        min-height: 200px;
+    }
+    
+    .navbar-nav {
+        flex-direction: row;
+    }
+    
+    .nav-item {
+        margin-right: 5px;
+    }
+}
+
+/* Custom button states */
+.btn-streaming {
+    color: var(--bs-light);
+    background-color: var(--bs-success);
+    border-color: var(--bs-success);
+}
+
+.btn-streaming:hover {
+    background-color: var(--bs-success-dark);
+    border-color: var(--bs-success-dark);
+}
